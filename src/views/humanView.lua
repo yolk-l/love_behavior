@@ -2,8 +2,17 @@
 local HumanView = {}
 HumanView.__index = HumanView
 
+-- 导入动画组件
+local HumanAnimation = require("src.graphics.human_animation")
+
 function HumanView:new()
     local self = setmetatable({}, HumanView)
+    -- 创建人类动画
+    self.animation = HumanAnimation:new()
+    -- 加载动画资源
+    if love.graphics then  -- 防止在没有LÖVE环境的情况下报错
+        self.animation:load()
+    end
     return self
 end
 
@@ -30,22 +39,17 @@ function HumanView:draw(human)
     screenX = screenX + map.tileSize / 2
     screenY = screenY + map.tileSize / 2
     
-    -- 绘制人类主体
-    love.graphics.setColor(1, 0, 0, 1) -- 使用鲜红色
-    love.graphics.circle("fill", screenX, screenY, human.size)
+    -- 更新动画状态
+    self.animation:update(0.033, human)  -- 假设大约30FPS
     
-    -- 绘制边框
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.circle("line", screenX, screenY, human.size)
-    
-    -- 根据状态绘制不同的状态指示器
-    self:drawStateIndicator(human, screenX, screenY)
+    -- 绘制人类动画
+    self.animation:draw(screenX, screenY, 1.5, human.color)
     
     -- 绘制健康状态条
     self:drawHealthBar(human, map, screenX, screenY)
     
-    -- 根据需要可以添加更多的视觉指示器
-    -- 例如绘制名称、职业图标等
+    -- 根据状态绘制不同的状态指示器
+    self:drawStateIndicator(human, screenX, screenY)
     
     -- 绘制运动动画效果
     if human.state == "moving" then
@@ -73,7 +77,7 @@ function HumanView:drawStateIndicator(human, screenX, screenY)
     end
     
     -- 绘制状态指示环
-    love.graphics.circle("line", screenX, screenY, human.size + 2)
+    love.graphics.circle("line", screenX, screenY, 12)
 end
 
 -- 绘制健康状态条
