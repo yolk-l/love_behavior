@@ -48,6 +48,11 @@ function Human:new(game, id, x, y, properties)
     self.targetEntity = nil
     self.inventory = {}
     
+    -- 移动属性
+    self.movementSpeed = properties.movementSpeed or 1.5  -- 每秒移动的格子数
+    self.realX = x  -- 实际X坐标（浮点数）
+    self.realY = y  -- 实际Y坐标（浮点数）
+    
     -- AI属性
     self.needsFood = false
     self.needsRest = false
@@ -59,9 +64,6 @@ function Human:new(game, id, x, y, properties)
     
     -- 初始化任务优先级
     self:initTaskPriority()
-    
-    -- 调试标记
-    self.hasDrawn = false
     
     print("人类实体创建成功: ID=" .. id .. ", 位置=(" .. x .. ", " .. y .. ")")
     
@@ -122,65 +124,6 @@ function Human:update(dt)
         -- 休息状态
         self:rest(dt)
     end
-end
-
-function Human:draw()
-    -- 绘制人类
-    -- 只在第一次绘制时打印日志
-    if not self.hasDrawn then
-        print("绘制人类实体: ID=" .. self.id .. ", 位置=(" .. self.x .. ", " .. self.y .. ")")
-        self.hasDrawn = true
-    end
-    
-    -- 检查游戏对象和地图是否存在
-    if not self.game or not self.game.map then
-        print("错误: 无法绘制人类实体，游戏对象或地图不存在")
-        return
-    end
-    
-    love.graphics.setColor(self.color)
-    
-    local map = self.game.map
-    local screenX, screenY = map:tileToScreen(self.x, self.y)
-    
-    -- 绘制在瓦片中心
-    screenX = screenX + map.tileSize / 2
-    screenY = screenY + map.tileSize / 2
-    
-    -- 绘制一个更明显的人类图形
-    love.graphics.setColor(1, 0, 0, 1) -- 使用鲜红色
-    love.graphics.circle("fill", screenX, screenY, self.size)
-    
-    -- 绘制边框
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.circle("line", screenX, screenY, self.size)
-    
-    -- 绘制状态指示器
-    if self.state == Human.STATE.GATHERING then
-        love.graphics.setColor(0.2, 0.8, 0.2)
-    elseif self.state == Human.STATE.BUILDING then
-        love.graphics.setColor(0.8, 0.8, 0.2)
-    elseif self.state == Human.STATE.FARMING then
-        love.graphics.setColor(0.2, 0.8, 0.8)
-    elseif self.state == Human.STATE.RESTING then
-        love.graphics.setColor(0.5, 0.5, 0.8)
-    end
-    
-    love.graphics.circle("line", screenX, screenY, self.size + 2)
-    
-    -- 绘制健康状态
-    local healthBarWidth = map.tileSize * 0.8
-    local healthBarHeight = 3
-    local healthBarX = screenX - healthBarWidth / 2
-    local healthBarY = screenY - self.size - 5
-    
-    -- 背景
-    love.graphics.setColor(0.3, 0.3, 0.3, 0.7)
-    love.graphics.rectangle("fill", healthBarX, healthBarY, healthBarWidth, healthBarHeight)
-    
-    -- 健康值
-    love.graphics.setColor(0.2, 0.8, 0.2)
-    love.graphics.rectangle("fill", healthBarX, healthBarY, healthBarWidth * (self.health / 100), healthBarHeight)
 end
 
 function Human:updateAI()
@@ -461,8 +404,14 @@ function Human:moveToTarget(dt)
         return
     end
     
-    -- 检查是否已到达目标
-    if self.x == self.targetX and self.y == self.targetY then
+    -- 检查是否已到达目标(基于整数网格坐标)
+    if math.abs(self.realX - self.targetX) < 0.1 and math.abs(self.realY - self.targetY) < 0.1 then
+        -- 同步网格坐标
+        self.x = self.targetX
+        self.y = self.targetY
+        self.realX = self.targetX
+        self.realY = self.targetY
+        
         -- 到达目标，执行相应行为
         if self.targetEntity then
             if self.targetEntity.type == "plant" then
@@ -492,46 +441,106 @@ function Human:moveToTarget(dt)
         return
     end
     
-    -- 计算移动方向
-    local dx = 0
-    local dy = 0
+    -- 计算移动方向和距离
+    local dirX = 0
+    local dirY = 0
     
-    if self.x < self.targetX then
-        dx = 1
-    elseif self.x > self.targetX then
-        dx = -1
+    -- 计算目标方向
+    if self.targetX > self.realX then
+        dirX = 1
+    elseif self.targetX < self.realX then
+        dirX = -1
     end
     
-    if self.y < self.targetY then
-        dy = 1
-    elseif self.y > self.targetY then
-        dy = -1
+    if self.targetY > self.realY then
+        dirY = 1
+    elseif self.targetY < self.realY then
+        dirY = -1
     end
     
-    -- 优先水平移动
-    if dx ~= 0 then
-        local newX = self.x + dx
-        local tile = self.game.map:getTile(newX, self.y)
-        if tile and tile.type ~= self.game.map.TILE_TYPES.WATER and
-                   tile.type ~= self.game.map.TILE_TYPES.MOUNTAIN then
-            self.x = newX
-            return
+    -- 更新实际位置（平滑移动）
+    local moveDistance = self.movementSpeed * dt
+    local nextX = self.realX
+    local nextY = self.realY
+    local moved = false
+    
+    -- 检查路径并移动
+    if dirX ~= 0 then
+        -- 计算下一步位置
+        local targetGridX = math.floor(self.realX) + (dirX > 0 and 1 or 0)
+        nextX = self.realX + dirX * moveDistance
+        
+        -- 检查是否越过了目标
+        if (dirX > 0 and nextX > self.targetX) or (dirX < 0 and nextX < self.targetX) then
+            nextX = self.targetX
         end
-    end
-    
-    -- 水平移动失败，尝试垂直移动
-    if dy ~= 0 then
-        local newY = self.y + dy
-        local tile = self.game.map:getTile(self.x, newY)
-        if tile and tile.type ~= self.game.map.TILE_TYPES.WATER and
-                   tile.type ~= self.game.map.TILE_TYPES.MOUNTAIN then
-            self.y = newY
-            return
+        
+        -- 检查新位置是否可通行
+        local newGridX = math.floor(nextX + (dirX > 0 and 0.1 or 0.9))
+        if newGridX ~= math.floor(self.realX + 0.5) then
+            -- 需要检查是否可以进入新格子
+            local nextTile = self.game.map:getTile(newGridX, math.floor(self.realY + 0.5))
+            if not nextTile or nextTile.type == self.game.map.TILE_TYPES.WATER or
+                        nextTile.type == self.game.map.TILE_TYPES.MOUNTAIN then
+                -- 不可通行，保持在当前格子边缘
+                if dirX > 0 then
+                    nextX = math.floor(self.realX) + 0.99
+                else
+                    nextX = math.floor(self.realX + 1) - 0.99
+                end
+            else
+                moved = true
+            end
+        else
+            moved = true
         end
+        
+        -- 更新实际X坐标
+        self.realX = nextX
+        -- 更新网格坐标
+        self.x = math.floor(self.realX + 0.5)
     end
     
-    -- 无法移动，重新寻找路径
-    self:randomMove()
+    if dirY ~= 0 then
+        -- 计算下一步位置
+        local targetGridY = math.floor(self.realY) + (dirY > 0 and 1 or 0)
+        nextY = self.realY + dirY * moveDistance
+        
+        -- 检查是否越过了目标
+        if (dirY > 0 and nextY > self.targetY) or (dirY < 0 and nextY < self.targetY) then
+            nextY = self.targetY
+        end
+        
+        -- 检查新位置是否可通行
+        local newGridY = math.floor(nextY + (dirY > 0 and 0.1 or 0.9))
+        if newGridY ~= math.floor(self.realY + 0.5) then
+            -- 需要检查是否可以进入新格子
+            local nextTile = self.game.map:getTile(math.floor(self.realX + 0.5), newGridY)
+            if not nextTile or nextTile.type == self.game.map.TILE_TYPES.WATER or
+                        nextTile.type == self.game.map.TILE_TYPES.MOUNTAIN then
+                -- 不可通行，保持在当前格子边缘
+                if dirY > 0 then
+                    nextY = math.floor(self.realY) + 0.99
+                else
+                    nextY = math.floor(self.realY + 1) - 0.99
+                end
+            else
+                moved = true
+            end
+        else
+            moved = true
+        end
+        
+        -- 更新实际Y坐标
+        self.realY = nextY
+        -- 更新网格坐标
+        self.y = math.floor(self.realY + 0.5)
+    end
+    
+    -- 如果无法移动，尝试重新寻找路径
+    if not moved then
+        self:randomMove()
+    end
 end
 
 function Human:gatherResources(dt)

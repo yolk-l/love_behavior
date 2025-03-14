@@ -8,6 +8,8 @@ local EntityManager = require("src.systems.entity_manager")
 local CardSystem = require("src.systems.card_system")
 local ResourceManager = require("src.systems.resource_manager")
 local UIManager = require("src.ui.ui_manager")
+-- 导入视图管理器
+local ViewManager = require("src.views.view_manager")
 
 function Game:new()
     local self = setmetatable({}, Game)
@@ -26,6 +28,8 @@ function Game:new()
     self.cardSystem = CardSystem:new(self)
     self.resourceManager = ResourceManager:new(self)
     self.uiManager = UIManager:new(self)
+    -- 初始化视图管理器
+    self.viewManager = ViewManager:new(self)
     
     -- 初始化游戏世界
     self:initWorld()
@@ -360,9 +364,12 @@ end
 
 function Game:draw()
     -- 绘制游戏
-    -- 绘制地图和实体
+    -- 绘制地图
     self.map:draw()
-    self.entityManager:draw()
+    
+    -- 使用视图管理器绘制实体，而不是直接使用实体管理器
+    -- self.entityManager:draw() -- 旧的绘制方式
+    self.viewManager:draw() -- 新的绘制方式
     
     -- 绘制UI（不包括卡牌系统）
     self.uiManager:drawWithoutCards()
@@ -373,6 +380,8 @@ function Game:draw()
     -- 绘制调试信息
     if self.debugMode then
         self:drawDebugInfo()
+        -- 也可以显示视图管理器的调试信息
+        self.viewManager:drawDebugInfo()
     end
 end
 
